@@ -1,0 +1,43 @@
+{
+  "name": "mmm-meteosat",
+  "version": "1.0.0",
+  "description": "Meteosat Third Generation full-disk imagery for MagicMirror² using the official EUMETSAT Data Store.",
+  "main": "node_helper.js",
+  "private": true,
+  "author": {
+    "name": "FHFH2025",
+    "url": "https://github.com/FHFH2025"
+  },
+  "license": "MIT",
+  "keywords": [
+    "magicmirror",
+    "magicmirror2",
+    "magicmirror-module",
+    "meteosat",
+    "mtg",
+    "eumetsat",
+    "satellite",
+    "weather",
+    "earth-observation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FHFH2025/MMM-Meteosat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FHFH2025/MMM-Meteosat/issues"
+  },
+  "homepage": "https://github.com/FHFH2025/MMM-Meteosat#readme",
+  "engines": {
+    "node": ">=20.3.0"
+  },
+  "scripts": {
+    "check": "node --check MMM-Meteosat.js && node --check node_helper.js"
+  },
+  "dependencies": {
+    "sharp": "^0.34.5"
+  },
+  "allowScripts": {
+    "sharp@0.34.5": true
+  }
+}
