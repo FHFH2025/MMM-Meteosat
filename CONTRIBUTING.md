@@ -56,17 +56,13 @@ npm run check
 
 Please verify that:
 
-- existing configuration values remain compatible,
-- all affected product profiles have been tested,
-- the default `geocolour` product still loads correctly,
-- multiple module instances use separate cache folders,
-- the cached-image fallback still works when a WMS request fails,
-- unchanged source images are not processed again,
-- documentation and `CHANGELOG.md` have been updated when required,
-- generated files below `cache/` are not included,
-- log messages are written in English,
-- the code follows the existing project style,
-- the version in `package.json` and the `USER_AGENT` in `node_helper.js` remain consistent when a release version changes.
+- your changes solve the intended problem,
+- existing functionality is not unintentionally affected,
+- `npm run check` completes successfully,
+- documentation has been updated when required,
+- generated files below `cache/` are not committed,
+- log messages remain in English,
+- the code follows the existing project style.
 
 ## Coding Style
 

@@ -13,6 +13,10 @@ Near-real-time Meteosat Third Generation (MTG) satellite imagery for MagicMirror
 - Configurable display size and source-image resolution
 - Optional source, product and timestamp caption
 
+## Screenshot
+
+![MMM-Meteosat screenshot](docs/screenshot.png)
+
 ## Requirements
 
 - MagicMirror²
@@ -147,7 +151,7 @@ If the newest downloaded image has the same SHA-256 hash as the cached source an
 
 ## Image processing
 
-The module combines EUMETView's existing transparency with a simple geometric full-disk mask. It does not inspect image colours and does not use brightness thresholds, HSV detection, flood fill or background guessing. This keeps the processing predictable across all supported products.
+The module downloads the original satellite image from the official EUMETView WMS service and generates a transparent image by applying a geometric full-disk mask. The resulting image has clean, consistent edges and is optimized for display in MagicMirror².
 
 ## Troubleshooting
 
