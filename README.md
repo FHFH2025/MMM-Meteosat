@@ -80,9 +80,23 @@ Some specialised products may show only part of the Earth disc, may contain blan
     wmsImageSize: 1800,
     updateInterval: 10 * 60 * 1000,
     showTimestamp: true,
+    timestampType: "acquisition",
+    timestampLocale: "de-DE",
+    timestampOptions: {
+      timeZone: "Europe/Berlin",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    },
     showSource: true,
     showProduct: true,
     showStatus: true,
+    logLevel: "INFO",
+    staleAfter: 90 * 60 * 1000,
+    retryDelays: [15 * 1000, 45 * 1000],
     messages: {
       loading: "Loading Meteosat image …",
       noImage: "No Meteosat image is available yet.",
@@ -99,10 +113,16 @@ Some specialised products may show only part of the Earth disc, may contain blan
 | `imageSize` | number | `550` | Display width in pixels. |
 | `wmsImageSize` | number | `1800` | Downloaded source-image width and height. Accepted range: 600–3600 pixels. |
 | `updateInterval` | number | `600000` | Update interval in milliseconds. Values below five minutes are raised to five minutes. |
-| `showTimestamp` | boolean | `true` | Shows the timestamp reported by the WMS response. If none is available, the response or download time is used. |
+| `showTimestamp` | boolean | `true` | Shows the selected timestamp in the caption. |
+| `timestampType` | string | `"acquisition"` | `"acquisition"` shows the latest acquisition time reported by the WMS capabilities. `"download"` shows the local download time. If no acquisition time is available, the download time is used as a fallback. |
+| `timestampLocale` | string | system locale | Locale passed to `Intl.DateTimeFormat`, for example `"de-DE"` or `"en-GB"`. Leave undefined to use the browser locale. |
+| `timestampOptions` | object | date and time, minutes | Options passed to `Intl.DateTimeFormat`. This can control date fields, time fields, 12/24-hour display, time zone and time-zone name. |
 | `showSource` | boolean | `true` | Shows EUMETSAT in the caption. |
 | `showProduct` | boolean | `true` | Shows the selected product name in the caption. |
 | `showStatus` | boolean | `true` | Shows status messages while no image is available. |
+| `logLevel` | string | `"INFO"` | Log level: `ERROR`, `WARN`, `INFO` or `DEBUG`. |
+| `staleAfter` | number | `5400000` | Writes a warning when the latest acquisition is older than this number of milliseconds. Set to `0` to disable the warning. |
+| `retryDelays` | number[] | `[15000, 45000]` | Delays before retrying temporary network, timeout, HTTP 429 or HTTP 5xx failures. Use `[]` to disable retries. |
 | `messages.loading` | string | `"Loading Meteosat image …"` | Message shown while the first image is being requested. |
 | `messages.noImage` | string | `"No Meteosat image is available yet."` | Message shown when no cached or newly downloaded image is available yet. |
 | `messages.error` | string | `"Meteosat image could not be loaded."` | Message shown after an image download or processing error. Technical details remain in the MagicMirror log. |
@@ -145,7 +165,7 @@ status.json
 
 - `source.png` is the most recently downloaded WMS image.
 - `latest.png` is the processed image displayed by MagicMirror².
-- `status.json` stores the requested and resolved product, product label, WMS layer, source, SHA-256 content hash, source timestamp, display timestamp, download time, relative file paths and image-processing information.
+- `status.json` stores the requested and resolved product, product label, WMS layer, source, SHA-256 content hash, acquisition time, WMS response time, download time, relative file paths and image-processing information.
 
 If the newest downloaded image has the same SHA-256 hash as the cached source and `latest.png` exists, the module keeps the existing processed image. If an update fails, an existing `latest.png` remains available as the local fallback.
 

@@ -18,3 +18,9 @@ cache/*
 config.js
 *.env
 .env
+
+# Local backups and archives
+*.tar.gz
+*.bak-*
+*.before-*
+backup-debug-logging-*/

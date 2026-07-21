@@ -2,18 +2,15 @@
 
 const fs = require("fs");
 const sharp = require("sharp");
+const { performance } = require("perf_hooks");
 
 const FULL_DISK_GEOMETRY = Object.freeze({
-  centerXRatio: 0.5,
-  centerYRatio: 0.5,
-  radiusRatio: 0.42,
-  opaqueOffsetRatio: -0.003,
-  transparentOffsetRatio: 0.003
+  centerXRatio: 0.5, centerYRatio: 0.5, radiusRatio: 0.42,
+  opaqueOffsetRatio: -0.003, transparentOffsetRatio: 0.003
 });
 
 function getGeometry(width, height) {
   const size = Math.min(width, height);
-
   return {
     centerX: width * FULL_DISK_GEOMETRY.centerXRatio,
     centerY: height * FULL_DISK_GEOMETRY.centerYRatio,
@@ -28,58 +25,37 @@ function buildMask(width, height, geometry, sourceAlpha) {
   const opaqueRadius = geometry.radius + geometry.opaqueOffset;
   const transparentRadius = geometry.radius + geometry.transparentOffset;
   const featherWidth = Math.max(1, transparentRadius - opaqueRadius);
-
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const index = y * width + x;
       const distance = Math.hypot(x - geometry.centerX, y - geometry.centerY);
       let geometricAlpha;
-
       if (distance <= opaqueRadius) geometricAlpha = 255;
       else if (distance >= transparentRadius) geometricAlpha = 0;
-      else {
-        geometricAlpha = Math.round(
-          ((transparentRadius - distance) / featherWidth) * 255
-        );
-      }
-
+      else geometricAlpha = Math.round(((transparentRadius - distance) / featherWidth) * 255);
       mask[index] = Math.round((geometricAlpha * sourceAlpha[index]) / 255);
     }
   }
-
   return mask;
 }
 
-async function processImage({ sourceFile, targetFile, tempFile }) {
-  const { data, info } = await sharp(sourceFile)
-    .ensureAlpha()
-    .toColourspace("srgb")
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
-  if (info.channels !== 4) {
-    throw new Error(`Unexpected source channel count: ${info.channels}.`);
-  }
+async function processImage({ sourceFile, targetFile, tempFile, debug = null }) {
+  const started = performance.now();
+  const inputBytes = fs.statSync(sourceFile).size;
+  const { data, info } = await sharp(sourceFile).ensureAlpha().toColourspace("srgb")
+    .raw().toBuffer({ resolveWithObject: true });
+  if (info.channels !== 4) throw new Error(`Unexpected source channel count: ${info.channels}.`);
 
   const pixelCount = info.width * info.height;
   const sourceAlpha = Buffer.allocUnsafe(pixelCount);
-
-  for (let index = 0; index < pixelCount; index += 1) {
-    sourceAlpha[index] = data[index * 4 + 3];
-  }
+  for (let index = 0; index < pixelCount; index += 1) sourceAlpha[index] = data[index * 4 + 3];
 
   const geometry = getGeometry(info.width, info.height);
   const alpha = buildMask(info.width, info.height, geometry, sourceAlpha);
+  for (let index = 0; index < pixelCount; index += 1) data[index * 4 + 3] = alpha[index];
 
-  for (let index = 0; index < pixelCount; index += 1) {
-    data[index * 4 + 3] = alpha[index];
-  }
-
-  await sharp(data, {
-    raw: { width: info.width, height: info.height, channels: 4 }
-  })
-    .png({ compressionLevel: 9, adaptiveFiltering: true })
-    .toFile(tempFile);
+  await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
+    .png({ compressionLevel: 9, adaptiveFiltering: true }).toFile(tempFile);
 
   const metadata = await sharp(tempFile).metadata();
   if (metadata.channels !== 4 || !metadata.hasAlpha) {
@@ -87,15 +63,15 @@ async function processImage({ sourceFile, targetFile, tempFile }) {
     throw new Error("Generated PNG does not contain an alpha channel.");
   }
 
+  const outputBytes = fs.statSync(tempFile).size;
   fs.chmodSync(tempFile, 0o644);
   fs.renameSync(tempFile, targetFile);
-
-  return {
-    method: "geometric-alpha-mask",
-    width: info.width,
-    height: info.height,
-    geometry
-  };
+  const durationMs = Math.round(performance.now() - started);
+  const result = { method: "geometric-alpha-mask", width: info.width, height: info.height,
+    channels: metadata.channels, hasAlpha: metadata.hasAlpha, geometry,
+    inputBytes, outputBytes, durationMs };
+  debug?.("Image processing", result);
+  return result;
 }
 
 module.exports = { processImage };

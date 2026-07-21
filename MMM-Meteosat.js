@@ -1,11 +1,17 @@
 /* global Module */
 
-const STATUS_REQUEST_DELAY = 3000;
-
 const DEFAULT_MESSAGES = Object.freeze({
   loading: "Loading Meteosat image …",
   noImage: "No Meteosat image is available yet.",
   error: "Meteosat image could not be loaded."
+});
+
+const DEFAULT_TIMESTAMP_OPTIONS = Object.freeze({
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit"
 });
 
 Module.register("MMM-Meteosat", {
@@ -16,9 +22,15 @@ Module.register("MMM-Meteosat", {
     wmsImageSize: 1800,
     updateInterval: 10 * 60 * 1000,
     showTimestamp: true,
+    timestampType: "acquisition",
+    timestampLocale: undefined,
+    timestampOptions: DEFAULT_TIMESTAMP_OPTIONS,
     showSource: true,
     showProduct: true,
     showStatus: true,
+    logLevel: "INFO",
+    staleAfter: 90 * 60 * 1000,
+    retryDelays: [15 * 1000, 45 * 1000],
     messages: DEFAULT_MESSAGES
   },
 
@@ -31,7 +43,8 @@ Module.register("MMM-Meteosat", {
     this.imageAvailable = false;
     this.imageVersion = Date.now();
     this.imagePath = null;
-    this.lastImageTime = null;
+    this.acquisitionTime = null;
+    this.downloadedAt = null;
     this.productLabel = null;
     this.statusText = this.messages.loading;
 
@@ -40,14 +53,18 @@ Module.register("MMM-Meteosat", {
       product: this.config.product,
       cacheId: this.config.cacheId,
       updateInterval: this.config.updateInterval,
-      wmsImageSize: this.config.wmsImageSize
+      wmsImageSize: this.config.wmsImageSize,
+      imageSize: this.config.imageSize,
+      logLevel: this.config.logLevel,
+      staleAfter: this.config.staleAfter,
+      retryDelays: this.config.retryDelays,
+      showTimestamp: this.config.showTimestamp,
+      timestampType: this.config.timestampType,
+      timestampLocale: this.config.timestampLocale,
+      showSource: this.config.showSource,
+      showProduct: this.config.showProduct,
+      showStatus: this.config.showStatus
     });
-
-    setTimeout(() => {
-      this.sendSocketNotification("METEOSAT_STATUS_REQUEST", {
-        instanceId: this.identifier
-      });
-    }, STATUS_REQUEST_DELAY);
   },
 
   getStyles() {
@@ -61,7 +78,8 @@ Module.register("MMM-Meteosat", {
       this.imageAvailable = true;
       this.imageVersion = payload.imageVersion || this.imageVersion;
       this.imagePath = payload.imagePath || this.imagePath;
-      this.lastImageTime = payload.imageTime || this.lastImageTime;
+      this.acquisitionTime = payload.acquisitionTime || this.acquisitionTime;
+      this.downloadedAt = payload.downloadedAt || this.downloadedAt;
       this.productLabel = payload.productLabel || this.productLabel;
       this.statusText = "";
       this.updateDom(notification === "METEOSAT_IMAGE_UPDATED" ? 500 : 250);
@@ -117,10 +135,36 @@ Module.register("MMM-Meteosat", {
 
     if (this.config.showSource) parts.push("EUMETSAT");
     if (this.config.showProduct && this.productLabel) parts.push(this.productLabel);
-    if (this.config.showTimestamp && this.lastImageTime) parts.push(this.lastImageTime);
+
+    const timestamp = this.getSelectedTimestamp();
+    if (this.config.showTimestamp && timestamp) parts.push(this.formatTimestamp(timestamp));
 
     caption.textContent = parts.join(" · ");
     return caption;
+  },
+
+  getSelectedTimestamp() {
+    return String(this.config.timestampType).toLowerCase() === "download"
+      ? this.downloadedAt
+      : this.acquisitionTime || this.downloadedAt;
+  },
+
+  formatTimestamp(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+
+    try {
+      return new Intl.DateTimeFormat(
+        this.config.timestampLocale || undefined,
+        {
+          ...DEFAULT_TIMESTAMP_OPTIONS,
+          ...(this.config.timestampOptions || {})
+        }
+      ).format(date);
+    } catch (error) {
+      console.error(`Invalid timestamp configuration: ${error.message}`);
+      return new Intl.DateTimeFormat(undefined, DEFAULT_TIMESTAMP_OPTIONS).format(date);
+    }
   },
 
   createStatus() {
