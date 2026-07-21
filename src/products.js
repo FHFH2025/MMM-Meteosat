@@ -46,12 +46,12 @@ const PRODUCT_PROFILES = Object.freeze({
 function resolveProduct(value) {
   const requested = typeof value === "string" && value.trim()
     ? value.trim().toLowerCase()
-    : "auto";
-  const resolved = requested === "auto" ? "geocolour" : requested;
+    : "geocolour";
+  const resolved = requested;
   const profile = PRODUCT_PROFILES[resolved];
 
   if (!profile) {
-    const supported = ["auto", ...Object.keys(PRODUCT_PROFILES)].join(", ");
+    const supported = Object.keys(PRODUCT_PROFILES).join(", ");
     throw new Error(
       `Unsupported product '${requested}'. Supported values: ${supported}.`
     );

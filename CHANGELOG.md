@@ -9,19 +9,32 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the project documentation to match the current EUMETView WMS implementation.
+- Removed the redundant `auto` product option and made `geocolour` the explicit default.
+- Documented Node.js requirements, cache-ID normalisation, cache metadata and timestamp behaviour.
+
+## [1.2.1] - 2026-07-21
+
 ### Added
 
-- Initial public release
-- Official EUMETSAT Data Store integration
-- OAuth authentication using Consumer Key and Consumer Secret
-- Automatic retrieval of the latest MTG Full Disk RGB quicklook
-- Transparent PNG generation
-- Connected-background detection
-- Configurable edge cleanup and feathering
-- Local image caching
-- Automatic update detection
-- Configurable image size
-- Configurable update interval
-- Optional timestamp and source label
-- Configurable loading text
-- Project documentation and contribution guidelines
+- Direct retrieval of MTG full-disk imagery from the EUMETSAT EUMETView WMS service.
+- Eight EUMETSAT products: GeoColour, Dust RGB, Cloud Phase RGB, Cloud Type RGB, Fog / Low Clouds RGB, Fire Temperature RGB, Snow RGB and Infrared 10.5 µm.
+- Eight selectable product values, with GeoColour as the default.
+- Configurable WMS source-image resolution through `wmsImageSize`.
+- Independent cache directories for each module instance and resolved product.
+- Cache state metadata in `status.json`.
+- SHA-256 source-image comparison to avoid unnecessary reprocessing.
+- Local fallback to the last successfully processed image when an update fails.
+- Configurable loading, no-image and error messages.
+- Optional source, product and timestamp caption fields.
+- Modular source files for products, cache handling, WMS access and image processing.
+
+### Changed
+
+- Reworked image acquisition around EUMETView WMS layers.
+- Added a minimum update interval of five minutes.
+- Limited `wmsImageSize` to 600–3600 pixels.
+- Normalised custom cache identifiers for safe folder names.
+- Kept technical error details in the MagicMirror log instead of displaying them on the mirror.

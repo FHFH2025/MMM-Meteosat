@@ -10,7 +10,7 @@ const DEFAULT_MESSAGES = Object.freeze({
 
 Module.register("MMM-Meteosat", {
   defaults: {
-    product: "auto",
+    product: "geocolour",
     cacheId: "",
     imageSize: 550,
     wmsImageSize: 1800,

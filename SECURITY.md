@@ -4,31 +4,36 @@
 
 Do not disclose security vulnerabilities in a public issue.
 
-Use GitHub's private vulnerability reporting feature to contact the repository maintainer.
+Use GitHub's private vulnerability reporting feature to contact the repository maintainer. Include enough information to reproduce and assess the issue without publishing sensitive local information.
 
-Include enough information to reproduce and assess the issue, but do not include active
-credentials.
+Useful details include:
+
+- affected module version or Git commit,
+- MagicMirror² and Node.js versions,
+- operating system,
+- clear reproduction steps,
+- expected and observed behaviour,
+- relevant minimal log excerpts.
 
 ## Sensitive Information
 
-Never include any of the following in issues, discussions, pull requests, screenshots or logs:
+Before sharing issues, discussions, pull requests, screenshots or logs, remove information that is not required to reproduce the problem, including:
 
-- EUMETSAT Consumer Keys
-- EUMETSAT Consumer Secrets
-- OAuth access tokens
-- account passwords
-- complete private MagicMirror² configurations
+- account passwords and session information,
+- complete private MagicMirror² configurations,
+- private hostnames, IP addresses and network paths,
+- personal information,
+- unrelated environment variables and logs.
 
-Redact sensitive values before sharing diagnostic information.
+## Dependency and Input Handling Issues
 
-## Exposed Credentials
+Security reports are particularly useful when they concern:
 
-If credentials are exposed:
-
-1. Revoke or regenerate them in EUMETSAT API Key Management.
-2. Update the local MagicMirror² configuration.
-3. Remove the credentials from Git history if they were committed.
-4. Treat previously issued tokens as compromised.
+- vulnerabilities in runtime dependencies such as `sharp`,
+- unsafe file or cache-path handling,
+- unexpected handling of WMS responses,
+- denial-of-service conditions caused by image size or repeated requests,
+- exposure of local files or diagnostic information.
 
 ## Supported Versions
 

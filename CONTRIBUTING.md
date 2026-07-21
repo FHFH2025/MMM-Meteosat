@@ -4,8 +4,6 @@ Thank you for your interest in contributing to **MMM-Meteosat**.
 
 Contributions of all kinds are welcome, including bug reports, feature requests, documentation improvements and pull requests.
 
----
-
 ## Before Opening an Issue
 
 Before creating a new issue, please:
@@ -13,9 +11,8 @@ Before creating a new issue, please:
 - update to the latest version of the module,
 - read the README and Troubleshooting section,
 - search existing GitHub issues,
-- remove all credentials from logs and configuration examples.
-
----
+- verify the problem with the default `wmsImageSize`,
+- remove private paths, hostnames, addresses and unrelated configuration from diagnostic material.
 
 ## Reporting Bugs
 
@@ -26,30 +23,25 @@ Please include as much relevant information as possible:
 - operating system
 - module version or Git commit
 - installation method
-- relevant configuration (without credentials)
-- relevant log output
+- selected product and relevant module configuration
+- whether one or multiple module instances are configured
+- relevant MagicMirror log output
 - clear steps to reproduce the issue
+- whether a cached `latest.png` is still displayed
 
-Never publish:
+When the issue concerns a particular product, state both the configured value and the product shown in the caption or `status.json`.
 
-- Consumer Keys
-- Consumer Secrets
-- OAuth access tokens
-
----
+Do not publish complete private MagicMirror² configurations, private network information or unrelated log content.
 
 ## Feature Requests
-
-Feature requests are welcome.
 
 Please describe:
 
 - the problem you want to solve,
 - the proposed behaviour,
 - the expected benefit,
-- any relevant EUMETSAT product or dataset.
-
----
+- any relevant EUMETView WMS product or layer,
+- whether the change affects caching, image processing or multiple module instances.
 
 ## Pull Requests
 
@@ -64,20 +56,23 @@ npm run check
 
 Please verify that:
 
-- existing configurations remain compatible,
-- documentation has been updated if required,
-- generated cache files are not included,
-- no credentials are committed,
+- existing configuration values remain compatible,
+- all affected product profiles have been tested,
+- the default `geocolour` product still loads correctly,
+- multiple module instances use separate cache folders,
+- the cached-image fallback still works when a WMS request fails,
+- unchanged source images are not processed again,
+- documentation and `CHANGELOG.md` have been updated when required,
+- generated files below `cache/` are not included,
 - log messages are written in English,
-- the code follows the existing project style.
-
----
+- the code follows the existing project style,
+- the version in `package.json` and the `USER_AGENT` in `node_helper.js` remain consistent when a release version changes.
 
 ## Coding Style
 
 The project follows a deliberately simple coding style:
 
-- JavaScript compatible with Node.js 20.3 or newer
+- JavaScript compatible with Node.js 20.3.0 or newer
 - 2-space indentation
 - semicolons
 - camelCase naming
@@ -86,8 +81,6 @@ The project follows a deliberately simple coding style:
 
 Please avoid unnecessary dependencies and unrelated formatting changes.
 
----
-
 ## Commit Messages
 
 Use concise imperative commit messages.
@@ -95,13 +88,11 @@ Use concise imperative commit messages.
 Examples:
 
 ```text
-Add configurable loading message
-Improve edge detection
-Update documentation
-Fix image cache handling
+Add another WMS product
+Clarify timestamp fallback
+Update cache metadata
+Fix multi-instance image refresh
 ```
-
----
 
 ## Licensing
 

@@ -1,19 +1,23 @@
 # MMM-Meteosat
 
-Near-real-time Meteosat Third Generation (MTG) satellite imagery for MagicMirror², obtained directly from the official EUMETSAT EUMETView service.
-
-No EUMETSAT account, API key or other credentials are required.
+Near-real-time Meteosat Third Generation (MTG) satellite imagery for MagicMirror², obtained directly from the official EUMETSAT EUMETView WMS service.
 
 ## Features
 
 - Current MTG full-disk imagery from EUMETSAT
 - Eight selectable satellite products
-- Recommended automatic day-and-night view
+- GeoColour as the default all-day product
 - Transparent background for dark MagicMirror layouts
 - Separate cache for every module instance and product
 - Local fallback when an update temporarily fails
 - Configurable display size and source-image resolution
 - Optional source, product and timestamp caption
+
+## Requirements
+
+- MagicMirror²
+- Node.js 20.3.0 or newer
+- Internet access from the MagicMirror host to EUMETView
 
 ## Installation
 
@@ -33,19 +37,20 @@ Restart MagicMirror² after installation.
   module: "MMM-Meteosat",
   position: "top_right",
   config: {
-    product: "auto"
+    product: "geocolour"
   }
 }
 ```
 
-`auto` is recommended for most users. It displays GeoColour: a natural-looking daytime image that automatically includes infrared information at night, so clouds remain visible around the clock.
+GeoColour is the default product. It provides a natural-looking daytime image and incorporates infrared information at night, so clouds remain visible around the clock.
 
 ## Products
 
+The module supports eight EUMETSAT WMS products.
+
 | Value | What it shows | Best suited for |
 |---|---|---|
-| `auto` | The recommended GeoColour view. Natural colours by day and an infrared-enhanced view at night. | General everyday use. |
-| `geocolour` | The same GeoColour product selected explicitly. | Users who prefer the exact product name in their configuration. |
+| `geocolour` | Natural colours by day and an infrared-enhanced view at night. | Recommended general everyday use. |
 | `dust` | Highlights airborne dust, especially large Saharan dust plumes. Colours are specialised and are not intended to look natural. | Tracking dust moving across Africa, the Atlantic and Europe. |
 | `cloudphase` | Helps distinguish different cloud properties, such as thick ice clouds, water clouds and thinner cloud areas. | A more detailed look at cloud structure. |
 | `cloudtype` | Classifies clouds into different types rather than showing a natural-colour photograph. | Comparing high, low, thick and thin cloud areas. |
@@ -65,7 +70,7 @@ Some specialised products may show only part of the Earth disc, may contain blan
   module: "MMM-Meteosat",
   position: "top_right",
   config: {
-    product: "auto",
+    product: "geocolour",
     cacheId: "",
     imageSize: 550,
     wmsImageSize: 1800,
@@ -85,12 +90,12 @@ Some specialised products may show only part of the Earth disc, may contain blan
 
 | Option | Type | Default | Description |
 |---|---|---:|---|
-| `product` | string | `"auto"` | Satellite product listed above. |
-| `cacheId` | string | `""` | Optional custom cache-folder name. Normally leave empty. |
+| `product` | string | `"geocolour"` | Product selection listed above. |
+| `cacheId` | string | `""` | Optional custom cache-folder name. Normally leave empty. Values are converted to lowercase and characters other than letters, numbers, `_` and `-` are replaced with `-`. |
 | `imageSize` | number | `550` | Display width in pixels. |
 | `wmsImageSize` | number | `1800` | Downloaded source-image width and height. Accepted range: 600–3600 pixels. |
 | `updateInterval` | number | `600000` | Update interval in milliseconds. Values below five minutes are raised to five minutes. |
-| `showTimestamp` | boolean | `true` | Shows the image time in the caption. |
+| `showTimestamp` | boolean | `true` | Shows the timestamp reported by the WMS response. If none is available, the response or download time is used. |
 | `showSource` | boolean | `true` | Shows EUMETSAT in the caption. |
 | `showProduct` | boolean | `true` | Shows the selected product name in the caption. |
 | `showStatus` | boolean | `true` | Shows status messages while no image is available. |
@@ -102,7 +107,7 @@ The three message texts can be changed independently. `showStatus: false` hides 
 
 ## Multiple module instances and cache folders
 
-Every module instance always receives a separate cache folder, including the first instance. MagicMirror identifiers such as `module_3_MMM-Meteosat` are shortened automatically:
+Every module instance receives a separate cache folder, including the first instance. MagicMirror identifiers such as `module_3_MMM-Meteosat` are shortened automatically:
 
 ```text
 cache/m3/geocolour/
@@ -115,12 +120,12 @@ A stable custom name can be selected when required:
 
 ```js
 config: {
-  product: "auto",
-  cacheId: "living-room"
+  product: "geocolour",
+  cacheId: "Living Room"
 }
 ```
 
-This produces:
+The custom value is normalised, producing:
 
 ```text
 cache/living-room/geocolour/
@@ -133,6 +138,12 @@ source.png
 latest.png
 status.json
 ```
+
+- `source.png` is the most recently downloaded WMS image.
+- `latest.png` is the processed image displayed by MagicMirror².
+- `status.json` stores the requested and resolved product, product label, WMS layer, source, SHA-256 content hash, source timestamp, display timestamp, download time, relative file paths and image-processing information.
+
+If the newest downloaded image has the same SHA-256 hash as the cached source and `latest.png` exists, the module keeps the existing processed image. If an update fails, an existing `latest.png` remains available as the local fallback.
 
 ## Image processing
 
@@ -149,13 +160,14 @@ The module combines EUMETView's existing transparency with a simple geometric fu
 
 ### A specialised product looks incomplete
 
-This is often expected. Read [Why some products do not show a complete globe](#why-some-products-do-not-show-a-complete-globe). Compare the result with `auto` before assuming that the image was cropped by the module.
+This is often expected. Read [Why some products do not show a complete globe](#why-some-products-do-not-show-a-complete-globe). Compare the result with `geocolour` before assuming that the image was cropped by the module.
 
 ### Clear one cached product
 
-Stop MagicMirror² and remove the relevant folder, for example:
+Stop MagicMirror², change to the module directory and remove the relevant folder, for example:
 
 ```bash
+cd ~/MagicMirror/modules/MMM-Meteosat
 rm -rf cache/m3/geocolour
 ```
 
