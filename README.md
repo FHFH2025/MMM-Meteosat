@@ -122,7 +122,7 @@ Some specialised products may show only part of the Earth disc, may contain blan
 | `showStatus` | boolean | `true` | Shows status messages while no image is available. |
 | `logLevel` | string | `"INFO"` | Log level: `ERROR`, `WARN`, `INFO` or `DEBUG`. |
 | `staleAfter` | number | `5400000` | Writes a warning when the latest acquisition is older than this number of milliseconds. Set to `0` to disable the warning. |
-| `retryDelays` | number[] | `[15000, 45000]` | Delays before retrying temporary network, timeout, HTTP 429 or HTTP 5xx failures. Use `[]` to disable retries. |
+| `retryDelays` | number[] | `[15000, 45000]` | Delays before retrying temporary network, timeout, HTTP 429 or HTTP 5xx failures. At most five entries are used; each delay is capped at five minutes. Use `[]` to disable retries. |
 | `messages.loading` | string | `"Loading Meteosat image …"` | Message shown while the first image is being requested. |
 | `messages.noImage` | string | `"No Meteosat image is available yet."` | Message shown when no cached or newly downloaded image is available yet. |
 | `messages.error` | string | `"Meteosat image could not be loaded."` | Message shown after an image download or processing error. Technical details remain in the MagicMirror log. |
@@ -172,6 +172,10 @@ If the newest downloaded image has the same SHA-256 hash as the cached source an
 ## Image processing
 
 The module downloads the original satellite image from the official EUMETView WMS service and generates a transparent image by applying a geometric full-disk mask. The resulting image has clean, consistent edges and is optimized for display in MagicMirror².
+
+## Runtime safety limits
+
+The node helper limits WMS images to 40 MiB, capabilities documents to 5 MiB and decoded input images to 3600 × 3600 pixels. Reconfiguration aborts obsolete network requests, and temporary files use unique names and are removed after failures. A maximum of ten module instances is accepted by one node helper process.
 
 ## Troubleshooting
 

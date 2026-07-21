@@ -1,7 +1,7 @@
 {
   "name": "mmm-meteosat",
-  "version": "1.2.5",
-  "description": "Near-real-time Meteosat Third Generation imagery for MagicMirror\u00b2 using EUMETSAT EUMETView.",
+  "version": "1.2.6",
+  "description": "Near-real-time Meteosat Third Generation imagery for MagicMirror² using EUMETSAT EUMETView.",
   "main": "node_helper.js",
   "private": true,
   "author": {
@@ -26,7 +26,8 @@
     "node": ">=20.3.0"
   },
   "scripts": {
-    "check": "node --check MMM-Meteosat.js && node --check node_helper.js && node --check src/products.js && node --check src/cache.js && node --check src/imageProcessor.js && node --check src/sources/wms.js && node --check src/logger.js"
+    "check": "node --check MMM-Meteosat.js && node --check node_helper.js && node --check src/products.js && node --check src/cache.js && node --check src/imageProcessor.js && node --check src/sources/wms.js && node --check src/logger.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "sharp": "^0.34.5"

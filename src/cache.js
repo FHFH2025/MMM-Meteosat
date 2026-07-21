@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 function sanitiseCacheId(value) {
   const cleaned = String(value || "")
@@ -45,28 +46,72 @@ function ensureCache(paths) {
   fs.mkdirSync(paths.directory, { recursive: true, mode: 0o755 });
 }
 
-function readState(paths) {
+function createTemporaryPath(basePath) {
+  const suffix = `${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+  return `${basePath}.${suffix}`;
+}
+
+function validString(value) {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function validIsoDate(value) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+function validateState(state) {
+  if (!state || typeof state !== "object" || Array.isArray(state)) return {};
+
+  const result = {
+    requestedProduct: validString(state.requestedProduct),
+    resolvedProduct: validString(state.resolvedProduct),
+    productLabel: validString(state.productLabel),
+    layer: validString(state.layer),
+    source: validString(state.source),
+    contentHash: /^[a-f0-9]{64}$/i.test(state.contentHash || "") ? state.contentHash : null,
+    imageTime: validIsoDate(state.imageTime),
+    responseTime: validIsoDate(state.responseTime),
+    downloadedAt: validIsoDate(state.downloadedAt),
+    processing: state.processing && typeof state.processing === "object" && !Array.isArray(state.processing)
+      ? state.processing
+      : null
+  };
+
+  return Object.fromEntries(Object.entries(result).filter(([, value]) => value !== null));
+}
+
+function readState(paths, onWarning = null) {
   if (!fs.existsSync(paths.stateFile)) return {};
 
   try {
-    return JSON.parse(fs.readFileSync(paths.stateFile, "utf8"));
-  } catch {
+    const parsed = JSON.parse(fs.readFileSync(paths.stateFile, "utf8"));
+    return validateState(parsed);
+  } catch (error) {
+    onWarning?.(`Invalid cache state ignored: ${error.message}`);
     return {};
   }
 }
 
 function writeState(paths, state) {
-  fs.writeFileSync(paths.tempStateFile, `${JSON.stringify(state, null, 2)}\n`, {
-    mode: 0o644
-  });
-  fs.renameSync(paths.tempStateFile, paths.stateFile);
-  return state;
+  const validated = validateState(state);
+  const temporaryFile = createTemporaryPath(paths.tempStateFile);
+
+  try {
+    fs.writeFileSync(temporaryFile, `${JSON.stringify(validated, null, 2)}\n`, { mode: 0o644 });
+    fs.renameSync(temporaryFile, paths.stateFile);
+    return validated;
+  } finally {
+    fs.rmSync(temporaryFile, { force: true });
+  }
 }
 
 module.exports = {
+  sanitiseCacheId,
   getCacheId,
   getCachePaths,
   ensureCache,
+  createTemporaryPath,
+  validateState,
   readState,
   writeState
 };

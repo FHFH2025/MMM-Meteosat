@@ -86,6 +86,11 @@ Module.register("MMM-Meteosat", {
       return;
     }
 
+    if (notification === "METEOSAT_CONFIG_ERROR") {
+      this.showStatusMessage(payload.message || this.messages.error);
+      return;
+    }
+
     if (notification === "METEOSAT_NO_IMAGE") {
       this.showStatusMessage(this.messages.noImage);
       return;

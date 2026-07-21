@@ -7,6 +7,19 @@ The format is based on
 and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.6] - 2026-07-22
+
+### Security and reliability
+
+- Validate configuration before replacing an active client.
+- Abort obsolete downloads when an instance is reconfigured.
+- Limit HTTP response sizes and Sharp input pixels.
+- Use unique temporary files and clean them up reliably.
+- Validate persisted cache state and derive served image paths internally.
+- Cap retry delays and enforce the documented five-minute minimum interval.
+- Sanitize upstream error text before logging.
+- Add Node.js tests and a GitHub Actions CI workflow.
+
 ## [Unreleased]
 
 ### Changed
