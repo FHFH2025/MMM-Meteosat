@@ -216,3 +216,17 @@ Restart MagicMirror² afterwards.
 Satellite imagery is provided by EUMETSAT. This module is not affiliated with or endorsed by EUMETSAT.
 
 The module source code is released under the MIT License. Satellite imagery remains subject to the applicable EUMETSAT data policy and attribution requirements.
+
+
+## Development and tests
+
+Install the dependencies and run the complete local verification:
+
+```bash
+npm ci
+npm run check
+npm test
+npm audit --omit=dev --audit-level=high
+```
+
+The repository contains small deterministic fixtures below `test/fixtures/`. GitHub Actions runs the syntax checks, test suite and production-dependency audit on Node.js 22 and 24 for every push and pull request.

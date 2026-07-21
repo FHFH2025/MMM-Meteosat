@@ -10,28 +10,15 @@ const { processImage } = require("./src/imageProcessor");
 const { downloadWmsImage, fetchLatestImageTime } = require("./src/sources/wms");
 const { MeteosatLogger, LEVELS: LOG_LEVELS } = require("./src/logger");
 
-const VERSION = "1.2.6";
-const DEFAULT_UPDATE_INTERVAL = 10 * 60 * 1000;
-const MINIMUM_UPDATE_INTERVAL = 60 * 1000;
-const DEFAULT_WMS_IMAGE_SIZE = 1800;
-const DEFAULT_STALE_AFTER = 90 * 60 * 1000;
-const DEFAULT_RETRY_DELAYS = [15 * 1000, 45 * 1000];
-const MAX_RETRY_DELAY = 5 * 60 * 1000;
+const VERSION = "1.2.7";
+const { MINIMUM_UPDATE_INTERVAL, normaliseUpdateInterval, normaliseImageSize, normaliseStaleAfter, normaliseRetryDelays } = require("./src/config");
+const { abortError, runWithRetries } = require("./src/retry");
 const MAX_CLIENTS = 10;
 const MAX_INSTANCE_ID_LENGTH = 128;
 const USER_AGENT = `MagicMirror-MMM-Meteosat/${VERSION}`;
 
 function exists(file) { return fs.existsSync(file); }
 function statSize(file) { try { return fs.statSync(file).size; } catch { return null; } }
-function abortError() { const error = new Error("Update aborted because the module was reconfigured."); error.name = "AbortError"; return error; }
-function sleep(delay, signal) {
-  if (signal?.aborted) return Promise.reject(abortError());
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, delay);
-    signal?.addEventListener("abort", () => { clearTimeout(timer); reject(abortError()); }, { once: true });
-  });
-}
-
 module.exports = NodeHelper.create({
   start() {
     this.clients = new Map();
@@ -129,15 +116,11 @@ module.exports = NodeHelper.create({
     void this.updateImage(instanceId, "startup");
   },
 
-  normaliseUpdateInterval(value) { return Number.isFinite(value) ? Math.max(MINIMUM_UPDATE_INTERVAL, Math.round(value)) : DEFAULT_UPDATE_INTERVAL; },
-  normaliseImageSize(value) { return Number.isFinite(value) ? Math.min(3600, Math.max(600, Math.round(value))) : DEFAULT_WMS_IMAGE_SIZE; },
+  normaliseUpdateInterval,
+  normaliseImageSize,
   normaliseLogLevel(value) { const level = String(value || "INFO").toUpperCase(); return Object.hasOwn(LOG_LEVELS, level) ? level : "INFO"; },
-  normaliseStaleAfter(value) { if (value === 0) return 0; return Number.isFinite(value) && value > 0 ? Math.round(value) : DEFAULT_STALE_AFTER; },
-  normaliseRetryDelays(value) {
-    return Array.isArray(value)
-      ? value.filter((v) => Number.isFinite(v) && v >= 0).map((v) => Math.min(MAX_RETRY_DELAY, Math.round(v))).slice(0, 5)
-      : [...DEFAULT_RETRY_DELAYS];
-  },
+  normaliseStaleAfter,
+  normaliseRetryDelays,
   getClient(instanceId) { return this.clients.get(instanceId) || null; },
   getPaths(client) { return getCachePaths(this.moduleDirectory, client.config.cacheId, client.config.selection.resolved); },
   isCurrent(instanceId, client) { return this.getClient(instanceId) === client && !client.abortController.signal.aborted; },
@@ -241,22 +224,13 @@ module.exports = NodeHelper.create({
   },
 
   async runWithRetries(client, operationName, operation) {
-    const { logger, config, abortController } = client;
-    const retryDelays = config.retryDelays || [];
-    const totalAttempts = retryDelays.length + 1;
-    for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
-      if (abortController.signal.aborted) throw abortError();
-      try {
-        return await operation();
-      } catch (error) {
-        if (abortController.signal.aborted || error.name === "AbortError") throw abortError();
-        logger.block("DEBUG", `${operationName} attempt failed`, { attempt: `${attempt}/${totalAttempts}`, message: error.message, status: error.status, retryable: error.retryable === true, details: error.details || null });
-        if (error?.retryable !== true || attempt >= totalAttempts) throw error;
-        const delay = retryDelays[attempt - 1];
-        logger.warn(`${operationName} attempt ${attempt}/${totalAttempts} failed: ${error.message} Retrying in ${Math.round(delay / 1000)} seconds.`);
-        await sleep(delay, abortController.signal);
-      }
-    }
+    return runWithRetries({
+      operationName,
+      operation,
+      retryDelays: client.config.retryDelays || [],
+      signal: client.abortController.signal,
+      logger: client.logger
+    });
   },
 
   sendCachedStatus(instanceId) {

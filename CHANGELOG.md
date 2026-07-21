@@ -7,6 +7,19 @@ The format is based on
 and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.7] - 2026-07-22
+
+### Changed
+
+- Keep the minimum update interval at five minutes and cover it with automated tests.
+- Run GitHub Actions on Node.js 22 and 24.
+- Extract configuration normalisation and retry handling into independently testable modules.
+
+### Added
+
+- Tests for configuration limits, WMS time parsing, HTTP response-size limits, retry behaviour, cache-state validation, temporary-file cleanup and image processing.
+- Small PNG, XML and JSON fixtures used by the automated test suite.
+
 ## [1.2.6] - 2026-07-22
 
 ### Security and reliability

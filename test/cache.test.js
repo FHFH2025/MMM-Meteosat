@@ -52,3 +52,22 @@ test("state writes are validated and leave no temporary files", () => {
   assert.equal(fs.readdirSync(paths.directory).some((name) => name.includes(".tmp.")), false);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+
+test("missing state files and incomplete states are handled safely", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mmm-meteosat-"));
+  const paths = getCachePaths(root, "m1", "geocolour");
+  ensureCache(paths);
+  assert.deepEqual(readState(paths), {});
+  fs.writeFileSync(paths.stateFile, JSON.stringify({ imageTime: "bad", processing: [], productLabel: "GeoColour" }));
+  assert.deepEqual(readState(paths), { productLabel: "GeoColour" });
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("temporary paths are unique", () => {
+  const { createTemporaryPath } = require("../src/cache");
+  const first = createTemporaryPath("file.tmp");
+  const second = createTemporaryPath("file.tmp");
+  assert.notEqual(first, second);
+  assert.match(first, /^file\.tmp\./);
+});
