@@ -2,44 +2,51 @@
 
 const STATUS_REQUEST_DELAY = 3000;
 
+const DEFAULT_MESSAGES = Object.freeze({
+  loading: "Loading Meteosat image …",
+  noImage: "No Meteosat image is available yet.",
+  error: "Meteosat image could not be loaded."
+});
+
 Module.register("MMM-Meteosat", {
   defaults: {
-    consumerKey: "",
-    consumerSecret: "",
-
+    product: "auto",
+    cacheId: "",
     imageSize: 550,
+    wmsImageSize: 1800,
     updateInterval: 10 * 60 * 1000,
-
     showTimestamp: true,
     showSource: true,
+    showProduct: true,
     showStatus: true,
-
-    loadingText: "Loading Meteosat image …",
-
-    backgroundThreshold: 195,
-    backgroundTolerance: 45,
-    edgeRemovalPixels: 3,
-    edgeFeatherPixels: 2
+    messages: DEFAULT_MESSAGES
   },
 
   start() {
+    this.messages = {
+      ...DEFAULT_MESSAGES,
+      ...(this.config.messages || {})
+    };
+
     this.imageAvailable = false;
     this.imageVersion = Date.now();
+    this.imagePath = null;
     this.lastImageTime = null;
-    this.statusText = this.config.loadingText;
+    this.productLabel = null;
+    this.statusText = this.messages.loading;
 
     this.sendSocketNotification("METEOSAT_CONFIG", {
-      consumerKey: this.config.consumerKey,
-      consumerSecret: this.config.consumerSecret,
+      instanceId: this.identifier,
+      product: this.config.product,
+      cacheId: this.config.cacheId,
       updateInterval: this.config.updateInterval,
-      backgroundThreshold: this.config.backgroundThreshold,
-      backgroundTolerance: this.config.backgroundTolerance,
-      edgeRemovalPixels: this.config.edgeRemovalPixels,
-      edgeFeatherPixels: this.config.edgeFeatherPixels
+      wmsImageSize: this.config.wmsImageSize
     });
 
     setTimeout(() => {
-      this.sendSocketNotification("METEOSAT_STATUS_REQUEST");
+      this.sendSocketNotification("METEOSAT_STATUS_REQUEST", {
+        instanceId: this.identifier
+      });
     }, STATUS_REQUEST_DELAY);
   },
 
@@ -48,106 +55,78 @@ Module.register("MMM-Meteosat", {
   },
 
   socketNotificationReceived(notification, payload = {}) {
-    if (notification === "METEOSAT_IMAGE_UPDATED") {
+    if (payload.instanceId && payload.instanceId !== this.identifier) return;
+
+    if (notification === "METEOSAT_IMAGE_UPDATED" || notification === "METEOSAT_IMAGE_UNCHANGED") {
       this.imageAvailable = true;
-      this.imageVersion = payload.imageVersion || Date.now();
-      this.lastImageTime = payload.imageTime || null;
+      this.imageVersion = payload.imageVersion || this.imageVersion;
+      this.imagePath = payload.imagePath || this.imagePath;
+      this.lastImageTime = payload.imageTime || this.lastImageTime;
+      this.productLabel = payload.productLabel || this.productLabel;
       this.statusText = "";
-      this.updateDom(500);
+      this.updateDom(notification === "METEOSAT_IMAGE_UPDATED" ? 500 : 250);
       return;
     }
 
-    if (notification === "METEOSAT_IMAGE_UNCHANGED") {
-      this.imageAvailable = true;
-      this.imageVersion =
-        payload.imageVersion || this.imageVersion;
-
-      if (payload.imageTime) {
-        this.lastImageTime = payload.imageTime;
-      }
-
-      this.statusText = "";
-      this.updateDom(250);
+    if (notification === "METEOSAT_NO_IMAGE") {
+      this.showStatusMessage(this.messages.noImage);
       return;
     }
 
     if (notification === "METEOSAT_IMAGE_ERROR") {
-      this.imageAvailable = false;
-      this.statusText =
-        payload.message ||
-        "Meteosat image could not be loaded.";
-
-      this.updateDom(250);
+      this.showStatusMessage(this.messages.error);
     }
+  },
+
+  showStatusMessage(message) {
+    this.imageAvailable = false;
+    this.statusText = message;
+    this.updateDom(250);
   },
 
   getDom() {
     const wrapper = document.createElement("div");
     wrapper.className = "mmm-meteosat";
 
-    if (this.imageAvailable) {
+    if (this.imageAvailable && this.imagePath) {
       wrapper.appendChild(this.createImage());
-
-      if (
-        this.config.showTimestamp &&
-        this.lastImageTime
-      ) {
-        wrapper.appendChild(this.createTimestamp());
+      if (this.config.showTimestamp || this.config.showSource || this.config.showProduct) {
+        wrapper.appendChild(this.createCaption());
       }
-
       return wrapper;
     }
 
-    if (this.config.showStatus) {
-      wrapper.appendChild(this.createStatus());
-    }
-
+    if (this.config.showStatus) wrapper.appendChild(this.createStatus());
     return wrapper;
   },
 
   createImage() {
     const image = document.createElement("img");
-
     image.className = "mmm-meteosat-image";
-    image.src =
-      "/modules/MMM-Meteosat/cache/latest.png?v=" +
-      encodeURIComponent(this.imageVersion);
-
+    image.src = `/modules/MMM-Meteosat/${this.imagePath}?v=${encodeURIComponent(this.imageVersion)}`;
     image.style.width = `${this.config.imageSize}px`;
-    image.alt = "Current Meteosat full-disk image";
-
-    image.onerror = () => {
-      this.imageAvailable = false;
-      this.statusText =
-        "Local Meteosat image could not be displayed.";
-
-      this.updateDom(250);
-    };
-
+    image.alt = this.productLabel ? `Current Meteosat ${this.productLabel} image` : "Current Meteosat image";
+    image.onerror = () => this.showStatusMessage(this.messages.error);
     return image;
   },
 
-  createTimestamp() {
-    const timestamp = document.createElement("div");
+  createCaption() {
+    const caption = document.createElement("div");
+    caption.className = "mmm-meteosat-timestamp";
+    const parts = [];
 
-    timestamp.className =
-      "mmm-meteosat-timestamp";
+    if (this.config.showSource) parts.push("EUMETSAT");
+    if (this.config.showProduct && this.productLabel) parts.push(this.productLabel);
+    if (this.config.showTimestamp && this.lastImageTime) parts.push(this.lastImageTime);
 
-    timestamp.textContent =
-      (this.config.showSource ? "EUMETSAT · " : "") +
-      this.lastImageTime;
-
-    return timestamp;
+    caption.textContent = parts.join(" · ");
+    return caption;
   },
 
   createStatus() {
     const status = document.createElement("div");
-
-    status.className =
-      "mmm-meteosat-status";
-
+    status.className = "mmm-meteosat-status";
     status.textContent = this.statusText;
-
     return status;
   }
 });
