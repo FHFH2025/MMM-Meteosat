@@ -112,8 +112,6 @@ Adapt the container name and path to your installation.
 
 ## Configuration reference
 
-The table below is validated automatically against the public defaults in `MMM-Meteosat.js`. A CI check fails when a public option is added or removed without updating this table, or when a documented default no longer matches the code.
-
 <!-- config-reference:start -->
 | Option | Type | Default | Description |
 |---|---|---|---|
