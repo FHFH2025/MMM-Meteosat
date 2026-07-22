@@ -52,7 +52,10 @@ Before submitting a pull request:
 ```bash
 npm install
 npm run check
+npm run docs:check
 ```
+
+The README configuration table is validated automatically against the public defaults in MMM-Meteosat.js. The CI check fails when a public option is added or removed without updating the table, or when a documented default no longer matches the code.
 
 Please verify that:
 
