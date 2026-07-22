@@ -15,6 +15,7 @@ cache/*
 .idea/
 
 # Local configuration and secrets
+/config.js
 *.env
 .env
 

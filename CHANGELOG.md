@@ -7,6 +7,17 @@ The format is based on
 and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Automatic README configuration validation through `npm run docs:check` and GitHub Actions.
+
+### Changed
+
+- Rewrote the README as a complete user and developer reference for version 1.3.0.
+- Narrowed the local `config.js` ignore rule so `src/config.js` remains trackable.
+
 ## [1.3.0] - 2026-07-22
 
 ### Added
@@ -46,8 +57,6 @@ and this project adheres to
 - Cap retry delays and enforce the documented five-minute minimum interval.
 - Sanitize upstream error text before logging.
 - Add Node.js tests and a GitHub Actions CI workflow.
-
-## [Unreleased]
 
 ### Changed
 
