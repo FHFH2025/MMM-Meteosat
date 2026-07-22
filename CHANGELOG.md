@@ -7,6 +7,20 @@ The format is based on
 and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-07-22
+
+### Added
+
+- Pause update timers, active downloads, retry waits and image processing while the module is suspended.
+- Refresh immediately after resume without starting duplicate update cycles.
+- Track the last update attempt, successful download and actual image-content change separately from the satellite acquisition time.
+- Mark delayed images in the caption when the acquisition time or unchanged-content duration exceeds `staleAfter`.
+- Automated tests for stale-image evaluation.
+
+### Changed
+
+- Keep the visible timestamp focused on the satellite acquisition time by default; operational timestamps remain internal and in `status.json`.
+
 ## [1.2.7] - 2026-07-22
 
 ### Changed

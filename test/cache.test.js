@@ -18,12 +18,18 @@ test("state validation removes paths and invalid values", () => {
     imageTime: 123,
     contentHash: "invalid",
     downloadedAt: "2026-07-22T12:00:00.000Z",
+    lastAttemptAt: "2026-07-22T12:05:00.000Z",
+    lastSuccessfulDownloadAt: "2026-07-22T12:00:00.000Z",
+    lastImageChangeAt: "2026-07-22T11:55:00.000Z",
     productLabel: "GeoColour"
   });
   assert.equal(state.imageFile, undefined);
   assert.equal(state.imageTime, undefined);
   assert.equal(state.contentHash, undefined);
   assert.equal(state.downloadedAt, "2026-07-22T12:00:00.000Z");
+  assert.equal(state.lastAttemptAt, "2026-07-22T12:05:00.000Z");
+  assert.equal(state.lastSuccessfulDownloadAt, "2026-07-22T12:00:00.000Z");
+  assert.equal(state.lastImageChangeAt, "2026-07-22T11:55:00.000Z");
   assert.equal(state.productLabel, "GeoColour");
 });
 

@@ -3,7 +3,8 @@
 const DEFAULT_MESSAGES = Object.freeze({
   loading: "Loading Meteosat image …",
   noImage: "No Meteosat image is available yet.",
-  error: "Meteosat image could not be loaded."
+  error: "Meteosat image could not be loaded.",
+  stale: "delayed"
 });
 
 const DEFAULT_TIMESTAMP_OPTIONS = Object.freeze({
@@ -46,6 +47,8 @@ Module.register("MMM-Meteosat", {
     this.acquisitionTime = null;
     this.downloadedAt = null;
     this.productLabel = null;
+    this.stale = false;
+    this.staleReason = null;
     this.statusText = this.messages.loading;
 
     this.sendSocketNotification("METEOSAT_CONFIG", {
@@ -67,6 +70,14 @@ Module.register("MMM-Meteosat", {
     });
   },
 
+  suspend() {
+    this.sendSocketNotification("METEOSAT_SUSPEND", { instanceId: this.identifier });
+  },
+
+  resume() {
+    this.sendSocketNotification("METEOSAT_RESUME", { instanceId: this.identifier });
+  },
+
   getStyles() {
     return ["MMM-Meteosat.css"];
   },
@@ -81,6 +92,8 @@ Module.register("MMM-Meteosat", {
       this.acquisitionTime = payload.acquisitionTime || this.acquisitionTime;
       this.downloadedAt = payload.downloadedAt || this.downloadedAt;
       this.productLabel = payload.productLabel || this.productLabel;
+      this.stale = payload.stale === true;
+      this.staleReason = payload.staleReason || null;
       this.statusText = "";
       this.updateDom(notification === "METEOSAT_IMAGE_UPDATED" ? 500 : 250);
       return;
@@ -143,8 +156,10 @@ Module.register("MMM-Meteosat", {
 
     const timestamp = this.getSelectedTimestamp();
     if (this.config.showTimestamp && timestamp) parts.push(this.formatTimestamp(timestamp));
+    if (this.stale && this.messages.stale) parts.push(this.messages.stale);
 
     caption.textContent = parts.join(" · ");
+    if (this.staleReason) caption.dataset.staleReason = this.staleReason;
     return caption;
   },
 

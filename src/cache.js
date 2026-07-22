@@ -72,6 +72,9 @@ function validateState(state) {
     imageTime: validIsoDate(state.imageTime),
     responseTime: validIsoDate(state.responseTime),
     downloadedAt: validIsoDate(state.downloadedAt),
+    lastAttemptAt: validIsoDate(state.lastAttemptAt),
+    lastSuccessfulDownloadAt: validIsoDate(state.lastSuccessfulDownloadAt),
+    lastImageChangeAt: validIsoDate(state.lastImageChangeAt),
     processing: state.processing && typeof state.processing === "object" && !Array.isArray(state.processing)
       ? state.processing
       : null

@@ -12,6 +12,8 @@ Near-real-time Meteosat Third Generation (MTG) satellite imagery for MagicMirror
 - Local fallback when an update temporarily fails
 - Configurable display size and source-image resolution
 - Optional source, product and timestamp caption
+- Automatic pause while the module is suspended and immediate refresh after resume
+- Stale-image detection using acquisition time and unchanged image content
 
 ## Screenshot
 
@@ -100,7 +102,8 @@ Some specialised products may show only part of the Earth disc, may contain blan
     messages: {
       loading: "Loading Meteosat image …",
       noImage: "No Meteosat image is available yet.",
-      error: "Meteosat image could not be loaded."
+      error: "Meteosat image could not be loaded.",
+      stale: "delayed"
     }
   }
 }
@@ -121,13 +124,20 @@ Some specialised products may show only part of the Earth disc, may contain blan
 | `showProduct` | boolean | `true` | Shows the selected product name in the caption. |
 | `showStatus` | boolean | `true` | Shows status messages while no image is available. |
 | `logLevel` | string | `"INFO"` | Log level: `ERROR`, `WARN`, `INFO` or `DEBUG`. |
-| `staleAfter` | number | `5400000` | Writes a warning when the latest acquisition is older than this number of milliseconds. Set to `0` to disable the warning. |
+| `staleAfter` | number | `5400000` | Marks the image as delayed when its acquisition time or the time since the last actual content change exceeds this threshold. A warning is also written to the log. Set to `0` to disable stale detection. |
 | `retryDelays` | number[] | `[15000, 45000]` | Delays before retrying temporary network, timeout, HTTP 429 or HTTP 5xx failures. At most five entries are used; each delay is capped at five minutes. Use `[]` to disable retries. |
 | `messages.loading` | string | `"Loading Meteosat image …"` | Message shown while the first image is being requested. |
 | `messages.noImage` | string | `"No Meteosat image is available yet."` | Message shown when no cached or newly downloaded image is available yet. |
 | `messages.error` | string | `"Meteosat image could not be loaded."` | Message shown after an image download or processing error. Technical details remain in the MagicMirror log. |
+| `messages.stale` | string | `"delayed"` | Short caption label appended when the displayed satellite image is considered stale. Set to an empty string to suppress the visible label while retaining stale detection and logging. |
 
-The three message texts can be changed independently. `showStatus: false` hides all of them. Technical error details are never displayed on the mirror and are written only to the MagicMirror log.
+The four message texts can be changed independently. `showStatus: false` hides all of them. Technical error details are never displayed on the mirror and are written only to the MagicMirror log.
+
+## Suspend and resume behaviour
+
+MagicMirror² calls the module lifecycle methods when a module or screen-control integration suspends and resumes it. While suspended, MMM-Meteosat stops its update timer, aborts an active request or retry wait and performs no image processing. On resume, the timer is restored and one immediate refresh is requested. Duplicate refreshes are avoided when an older update is still finishing.
+
+The visible timestamp remains the satellite acquisition time by default. Download and attempt times are maintained internally for diagnostics and cache state.
 
 ## Multiple module instances and cache folders
 
@@ -165,9 +175,9 @@ status.json
 
 - `source.png` is the most recently downloaded WMS image.
 - `latest.png` is the processed image displayed by MagicMirror².
-- `status.json` stores the requested and resolved product, product label, WMS layer, source, SHA-256 content hash, acquisition time, WMS response time, download time, relative file paths and image-processing information.
+- `status.json` stores the requested and resolved product, product label, WMS layer, source, SHA-256 content hash, acquisition time, WMS response time, last update attempt, last successful download, last actual image-content change and image-processing information.
 
-If the newest downloaded image has the same SHA-256 hash as the cached source and `latest.png` exists, the module keeps the existing processed image. If an update fails, an existing `latest.png` remains available as the local fallback.
+If the newest downloaded image has the same SHA-256 hash as the cached source and `latest.png` exists, the module keeps the existing processed image and preserves the time of the last actual content change. If an update fails, an existing `latest.png` remains available as the local fallback.
 
 ## Image processing
 

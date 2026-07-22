@@ -9,8 +9,9 @@ const { getCacheId, getCachePaths, ensureCache, readState, writeState } = requir
 const { processImage } = require("./src/imageProcessor");
 const { downloadWmsImage, fetchLatestImageTime } = require("./src/sources/wms");
 const { MeteosatLogger, LEVELS: LOG_LEVELS } = require("./src/logger");
+const { evaluateFreshness } = require("./src/status");
 
-const VERSION = "1.2.7";
+const VERSION = "1.3.0";
 const { MINIMUM_UPDATE_INTERVAL, normaliseUpdateInterval, normaliseImageSize, normaliseStaleAfter, normaliseRetryDelays } = require("./src/config");
 const { abortError, runWithRetries } = require("./src/retry");
 const MAX_CLIENTS = 10;
@@ -19,6 +20,8 @@ const USER_AGENT = `MagicMirror-MMM-Meteosat/${VERSION}`;
 
 function exists(file) { return fs.existsSync(file); }
 function statSize(file) { try { return fs.statSync(file).size; } catch { return null; } }
+function nowIso() { return new Date().toISOString(); }
+
 module.exports = NodeHelper.create({
   start() {
     this.clients = new Map();
@@ -34,7 +37,15 @@ module.exports = NodeHelper.create({
         this.configureClient(instanceId, payload);
         return;
       }
-      if (notification === "METEOSAT_STATUS_REQUEST") this.sendCachedStatus(instanceId);
+      if (notification === "METEOSAT_STATUS_REQUEST") {
+        this.sendCachedStatus(instanceId);
+        return;
+      }
+      if (notification === "METEOSAT_SUSPEND") {
+        this.suspendClient(instanceId);
+        return;
+      }
+      if (notification === "METEOSAT_RESUME") this.resumeClient(instanceId);
     } catch (error) {
       console.error(`[MMM-Meteosat][${instanceId}][ERROR] Invalid configuration: ${error.message}`);
       this.sendSocketNotification("METEOSAT_CONFIG_ERROR", { instanceId, message: "Invalid MMM-Meteosat configuration." });
@@ -79,15 +90,16 @@ module.exports = NodeHelper.create({
     const logger = new MeteosatLogger(instanceId, config.logLevel);
     const client = {
       config, logger, generation, timer: null,
+      suspended: false, resumePending: false,
       updateRunning: false, updateStartedAt: null,
-      abortController: new AbortController()
+      operationController: null
     };
     const paths = this.getPaths(client);
     ensureCache(paths);
     const state = readState(paths, (message) => logger.warn(message));
 
     if (previous?.timer) clearInterval(previous.timer);
-    previous?.abortController?.abort();
+    previous?.operationController?.abort();
     this.clients.set(instanceId, client);
 
     logger.info(`Product: ${config.selection.requested} -> ${config.selection.resolved}; cache: ${config.cacheId}; interval: ${config.updateInterval} ms.`);
@@ -108,10 +120,12 @@ module.exports = NodeHelper.create({
       stateFile: paths.stateFile, sourceExists: exists(paths.sourceFile), imageExists: exists(paths.imageFile),
       stateExists: exists(paths.stateFile), sourceBytes: statSize(paths.sourceFile),
       imageBytes: statSize(paths.imageFile), acquisition: state.imageTime || null,
-      downloadedAt: state.downloadedAt || null, contentHash: state.contentHash || null
+      downloadedAt: state.downloadedAt || null, lastAttemptAt: state.lastAttemptAt || null,
+      lastSuccessfulDownloadAt: state.lastSuccessfulDownloadAt || null,
+      lastImageChangeAt: state.lastImageChangeAt || null, contentHash: state.contentHash || null
     });
 
-    client.timer = setInterval(() => this.updateImage(instanceId, "timer"), config.updateInterval);
+    this.startClientTimer(instanceId, client);
     this.sendCachedStatus(instanceId);
     void this.updateImage(instanceId, "startup");
   },
@@ -123,21 +137,67 @@ module.exports = NodeHelper.create({
   normaliseRetryDelays,
   getClient(instanceId) { return this.clients.get(instanceId) || null; },
   getPaths(client) { return getCachePaths(this.moduleDirectory, client.config.cacheId, client.config.selection.resolved); },
-  isCurrent(instanceId, client) { return this.getClient(instanceId) === client && !client.abortController.signal.aborted; },
-  assertCurrent(instanceId, client) { if (!this.isCurrent(instanceId, client)) throw abortError(); },
+
+  startClientTimer(instanceId, client) {
+    if (client.timer) clearInterval(client.timer);
+    if (client.suspended) {
+      client.timer = null;
+      return;
+    }
+    client.timer = setInterval(() => this.updateImage(instanceId, "timer"), client.config.updateInterval);
+  },
+
+  suspendClient(instanceId) {
+    const client = this.getClient(instanceId);
+    if (!client || client.suspended) return;
+    client.suspended = true;
+    client.resumePending = false;
+    if (client.timer) clearInterval(client.timer);
+    client.timer = null;
+    client.operationController?.abort();
+    client.logger.debug("Module suspended; update timer and active update stopped.");
+  },
+
+  resumeClient(instanceId) {
+    const client = this.getClient(instanceId);
+    if (!client) return;
+    client.suspended = false;
+    this.startClientTimer(instanceId, client);
+    client.logger.debug("Module resumed; immediate refresh requested.");
+    if (client.updateRunning) {
+      client.resumePending = true;
+      return;
+    }
+    void this.updateImage(instanceId, "resume");
+  },
+
+  isCurrent(instanceId, client, controller) {
+    return this.getClient(instanceId) === client
+      && client.operationController === controller
+      && !controller.signal.aborted
+      && !client.suspended;
+  },
+
+  assertCurrent(instanceId, client, controller) {
+    if (!this.isCurrent(instanceId, client, controller)) throw abortError();
+  },
 
   async updateImage(instanceId, trigger = "manual") {
     const client = this.getClient(instanceId);
-    if (!client) return;
+    if (!client || client.suspended) return;
     const logger = client.logger;
     if (client.updateRunning) {
       const runningFor = client.updateStartedAt ? Date.now() - client.updateStartedAt : null;
       logger.debug(`Update already running${runningFor !== null ? ` for ${runningFor} ms` : ""}; duplicate ${trigger} trigger skipped.`);
+      if (trigger === "resume") client.resumePending = true;
       return;
     }
 
+    const controller = new AbortController();
+    client.operationController = controller;
     client.updateRunning = true;
     client.updateStartedAt = Date.now();
+    const attemptAt = nowIso();
     const cycleStarted = performance.now();
     const summary = { trigger, result: "failed", capabilitiesSource: null, remoteTime: null, cachedTime: null, downloaded: false, processed: false, downloadBytes: null };
     const { config } = client;
@@ -149,8 +209,8 @@ module.exports = NodeHelper.create({
     try {
       const previousState = readState(paths, (message) => logger.warn(message));
       summary.cachedTime = previousState.imageTime || null;
-      const capabilities = await this.runWithRetries(client, "GetCapabilities", () => fetchLatestImageTime(selection.profile, USER_AGENT, debug, client.abortController.signal));
-      this.assertCurrent(instanceId, client);
+      const capabilities = await this.runWithRetries(client, controller, "GetCapabilities", () => fetchLatestImageTime(selection.profile, USER_AGENT, debug, controller.signal));
+      this.assertCurrent(instanceId, client, controller);
       const latestImageTime = capabilities.imageTime;
       summary.capabilitiesSource = capabilities.source;
       summary.remoteTime = latestImageTime || null;
@@ -162,50 +222,57 @@ module.exports = NodeHelper.create({
       if (cacheComplete && Number.isFinite(latestTimestamp) && Number.isFinite(previousTimestamp) && latestTimestamp <= previousTimestamp) decision = "skip";
 
       if (decision === "skip") {
+        const state = writeState(paths, { ...previousState, lastAttemptAt: attemptAt });
         summary.result = "unchanged";
-        this.warnIfStale(instanceId, previousState.imageTime, config.staleAfter);
-        this.sendStatus("METEOSAT_IMAGE_UNCHANGED", instanceId, previousState, paths);
+        this.logFreshness(instanceId, state, config.staleAfter);
+        this.sendStatus("METEOSAT_IMAGE_UNCHANGED", instanceId, state, paths);
         return;
       }
 
-      const sourceResult = await this.runWithRetries(client, "GetMap", () => downloadWmsImage({
+      const sourceResult = await this.runWithRetries(client, controller, "GetMap", () => downloadWmsImage({
         profile: selection.profile, targetFile: paths.sourceFile, tempFile: paths.tempSourceFile,
         size: config.wmsImageSize, userAgent: USER_AGENT, imageTime: latestImageTime,
-        debug, signal: client.abortController.signal,
-        isActive: () => this.isCurrent(instanceId, client)
+        debug, signal: controller.signal,
+        isActive: () => this.isCurrent(instanceId, client, controller)
       }));
-      this.assertCurrent(instanceId, client);
+      this.assertCurrent(instanceId, client, controller);
       summary.downloaded = true;
       summary.downloadBytes = sourceResult.bytes;
+      const successfulDownloadAt = sourceResult.downloadedAt || nowIso();
 
       if (previousState.contentHash === sourceResult.hash && exists(paths.imageFile)) {
         const unchangedState = writeState(paths, {
           ...previousState,
           imageTime: sourceResult.imageTime || previousState.imageTime || null,
           responseTime: sourceResult.responseTime || previousState.responseTime || null,
-          downloadedAt: sourceResult.downloadedAt || previousState.downloadedAt || null
+          downloadedAt: successfulDownloadAt,
+          lastAttemptAt: attemptAt,
+          lastSuccessfulDownloadAt: successfulDownloadAt,
+          lastImageChangeAt: previousState.lastImageChangeAt || previousState.downloadedAt || successfulDownloadAt
         });
         summary.result = "same-content";
-        this.warnIfStale(instanceId, unchangedState.imageTime, config.staleAfter);
+        this.logFreshness(instanceId, unchangedState, config.staleAfter);
         this.sendStatus("METEOSAT_IMAGE_UNCHANGED", instanceId, unchangedState, paths);
         return;
       }
 
       const processing = await processImage({
         sourceFile: paths.sourceFile, targetFile: paths.imageFile, tempFile: paths.tempImageFile, debug,
-        isActive: () => this.isCurrent(instanceId, client)
+        isActive: () => this.isCurrent(instanceId, client, controller)
       });
-      this.assertCurrent(instanceId, client);
+      this.assertCurrent(instanceId, client, controller);
       summary.processed = true;
       const state = writeState(paths, {
         requestedProduct: selection.requested, resolvedProduct: selection.resolved,
         productLabel: selection.profile.label, layer: selection.profile.layer,
         source: sourceResult.source, contentHash: sourceResult.hash,
         imageTime: sourceResult.imageTime, responseTime: sourceResult.responseTime,
-        downloadedAt: sourceResult.downloadedAt, processing
+        downloadedAt: successfulDownloadAt, lastAttemptAt: attemptAt,
+        lastSuccessfulDownloadAt: successfulDownloadAt,
+        lastImageChangeAt: successfulDownloadAt, processing
       });
       summary.result = "updated";
-      this.warnIfStale(instanceId, state.imageTime, config.staleAfter);
+      this.logFreshness(instanceId, state, config.staleAfter);
       logger.info(`Image updated: ${selection.profile.label}.`);
       this.sendStatus("METEOSAT_IMAGE_UPDATED", instanceId, state, paths);
     } catch (error) {
@@ -213,22 +280,27 @@ module.exports = NodeHelper.create({
         summary.result = "aborted";
         logger.debug(error.message);
       } else {
-        this.handleError(instanceId, client, paths, error);
+        this.handleError(instanceId, client, controller, paths, error, attemptAt);
       }
     } finally {
       summary.durationMs = Math.round(performance.now() - cycleStarted);
       logger.block("DEBUG", "Update summary", summary);
+      if (client.operationController === controller) client.operationController = null;
       client.updateRunning = false;
       client.updateStartedAt = null;
+      if (client.resumePending && !client.suspended && this.getClient(instanceId) === client) {
+        client.resumePending = false;
+        setImmediate(() => this.updateImage(instanceId, "resume"));
+      }
     }
   },
 
-  async runWithRetries(client, operationName, operation) {
+  async runWithRetries(client, controller, operationName, operation) {
     return runWithRetries({
       operationName,
       operation,
       retryDelays: client.config.retryDelays || [],
-      signal: client.abortController.signal,
+      signal: controller.signal,
       logger: client.logger
     });
   },
@@ -239,40 +311,49 @@ module.exports = NodeHelper.create({
     const paths = this.getPaths(client);
     const state = readState(paths, (message) => client.logger.warn(message));
     if (exists(paths.imageFile)) {
-      this.warnIfStale(instanceId, state.imageTime, client.config.staleAfter);
+      this.logFreshness(instanceId, state, client.config.staleAfter);
       this.sendStatus("METEOSAT_IMAGE_UNCHANGED", instanceId, state, paths);
     } else this.sendSocketNotification("METEOSAT_NO_IMAGE", { instanceId });
   },
 
   sendStatus(notification, instanceId, state, paths) {
+    const client = this.getClient(instanceId);
+    const freshness = evaluateFreshness(state, client?.config.staleAfter || 0);
     this.sendSocketNotification(notification, {
       instanceId,
       acquisitionTime: state.imageTime || null,
-      downloadedAt: state.downloadedAt || null,
+      downloadedAt: state.lastSuccessfulDownloadAt || state.downloadedAt || null,
+      lastAttemptAt: state.lastAttemptAt || null,
+      lastImageChangeAt: state.lastImageChangeAt || null,
+      stale: freshness.stale,
+      staleReason: freshness.reason,
       imagePath: paths.relativeImageFile,
-      productLabel: state.productLabel || this.getClient(instanceId)?.config.selection.profile.label || null,
+      productLabel: state.productLabel || client?.config.selection.profile.label || null,
       imageVersion: Date.now()
     });
   },
 
-  warnIfStale(instanceId, imageTime, staleAfter) {
+  logFreshness(instanceId, state, staleAfter) {
     const client = this.getClient(instanceId);
-    if (!staleAfter || !imageTime) return;
-    const timestamp = Date.parse(imageTime);
-    if (!Number.isFinite(timestamp)) return;
-    const age = Math.max(0, Date.now() - timestamp);
-    if (age > staleAfter) client?.logger.warn(`The latest satellite image is ${Math.round(age / 60_000)} minutes old (warning threshold: ${Math.round(staleAfter / 60_000)} minutes).`);
+    const freshness = evaluateFreshness(state, staleAfter);
+    if (!freshness.stale) return freshness;
+    const details = [];
+    if (freshness.imageAgeMs !== null) details.push(`image age ${Math.round(freshness.imageAgeMs / 60_000)} minutes`);
+    if (freshness.unchangedForMs !== null) details.push(`content unchanged for ${Math.round(freshness.unchangedForMs / 60_000)} minutes`);
+    client?.logger.warn(`The satellite image is stale (${details.join(", ")}; threshold: ${Math.round(staleAfter / 60_000)} minutes).`);
+    return freshness;
   },
 
-  handleError(instanceId, client, paths, error) {
+  handleError(instanceId, client, controller, paths, error, attemptAt) {
     client.logger.block("ERROR", "Update failed", {
       name: error.name, message: error.message, status: error.status,
       retryable: error.retryable === true, details: error.details || null,
       stack: client.config.logLevel === "DEBUG" ? error.stack : null
     });
-    if (!this.isCurrent(instanceId, client)) return;
+    if (this.getClient(instanceId) !== client || client.operationController !== controller || client.suspended) return;
     if (exists(paths.imageFile)) {
-      this.sendStatus("METEOSAT_IMAGE_UNCHANGED", instanceId, readState(paths), paths);
+      const state = writeState(paths, { ...readState(paths), lastAttemptAt: attemptAt });
+      this.sendStatus("METEOSAT_IMAGE_UNCHANGED", instanceId, state, paths);
       return;
     }
     this.sendSocketNotification("METEOSAT_IMAGE_ERROR", { instanceId });
