@@ -9,14 +9,36 @@ and this project adheres to
 
 ## [Unreleased]
 
-### Added
+## [1.4.1] - 2026-07-22
 
-- Automatic README configuration validation through `npm run docs:check` and GitHub Actions.
+### Fixed
+
+- Run all `sharp` and libvips work in a dedicated Node.js child process instead of the MagicMirror Electron process, avoiding the Linux Electron/Sharp compatibility warning and isolating native image processing failures.
+- Make Sharp worker operations abort-aware, time-bounded and atomic so interrupted or failed processing cannot replace a valid cached image.
+- Route image and overlay validation through the same isolated worker; the Electron node helper no longer imports `sharp`.
+- Add logger tests proving that `ERROR`, `WARN`, `INFO` and `DEBUG` output is filtered according to the configured `logLevel` and carries the matching level label.
+- Refresh overlays independently so a slow or failed overlay request cannot delay satellite image checks or downloads.
+- Prefer `Cache-Control: max-age` over `Expires` when calculating overlay cache lifetime.
+- Route browser-side timestamp errors through the same level-labelled logging convention.
 
 ### Changed
 
-- Rewrote the README as a complete user and developer reference for version 1.3.0.
-- Narrowed the local `config.js` ignore rule so `src/config.js` remains trackable.
+- Add the active worker backend to DEBUG image-processing details.
+
+## [1.4.0] - 2026-07-22
+
+### Added
+
+- Optional official EUMETSAT coastline overlays through `showCoastlines`.
+- Optional official EUMETSAT country-border overlays through `showCountryBorders`.
+- Configurable browser-side overlay opacity through `overlayOpacity`.
+- Shared overlay cache by WMS image size with server-directed expiry, PNG validation, SHA-256 metadata and atomic replacement.
+- Automated tests for overlay selection, fixed layer URLs, cache lifetime, state validation and opacity limits.
+
+### Changed
+
+- Keep overlays separate from satellite imagery so opacity changes require no new download or image processing.
+- Allow overlay download or refresh failures to degrade silently without affecting the satellite image.
 
 ## [1.3.0] - 2026-07-22
 

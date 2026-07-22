@@ -29,6 +29,9 @@ Module.register("MMM-Meteosat", {
     showSource: true,
     showProduct: true,
     showStatus: true,
+    showCoastlines: false,
+    showCountryBorders: false,
+    overlayOpacity: 0.6,
     logLevel: "INFO",
     staleAfter: 90 * 60 * 1000,
     retryDelays: [15 * 1000, 45 * 1000],
@@ -49,6 +52,8 @@ Module.register("MMM-Meteosat", {
     this.productLabel = null;
     this.stale = false;
     this.staleReason = null;
+    this.overlayPath = null;
+    this.overlayVersion = null;
     this.statusText = this.messages.loading;
 
     this.sendSocketNotification("METEOSAT_CONFIG", {
@@ -66,7 +71,10 @@ Module.register("MMM-Meteosat", {
       timestampLocale: this.config.timestampLocale,
       showSource: this.config.showSource,
       showProduct: this.config.showProduct,
-      showStatus: this.config.showStatus
+      showStatus: this.config.showStatus,
+      showCoastlines: this.config.showCoastlines,
+      showCountryBorders: this.config.showCountryBorders,
+      overlayOpacity: this.config.overlayOpacity
     });
   },
 
@@ -94,6 +102,8 @@ Module.register("MMM-Meteosat", {
       this.productLabel = payload.productLabel || this.productLabel;
       this.stale = payload.stale === true;
       this.staleReason = payload.staleReason || null;
+      this.overlayPath = payload.overlayPath || null;
+      this.overlayVersion = payload.overlayVersion || null;
       this.statusText = "";
       this.updateDom(notification === "METEOSAT_IMAGE_UPDATED" ? 500 : 250);
       return;
@@ -125,7 +135,7 @@ Module.register("MMM-Meteosat", {
     wrapper.className = "mmm-meteosat";
 
     if (this.imageAvailable && this.imagePath) {
-      wrapper.appendChild(this.createImage());
+      wrapper.appendChild(this.createImageStack());
       if (this.config.showTimestamp || this.config.showSource || this.config.showProduct) {
         wrapper.appendChild(this.createCaption());
       }
@@ -136,11 +146,30 @@ Module.register("MMM-Meteosat", {
     return wrapper;
   },
 
+  createImageStack() {
+    const stack = document.createElement("div");
+    stack.className = "mmm-meteosat-image-stack";
+    stack.style.width = `${this.config.imageSize}px`;
+    stack.appendChild(this.createImage());
+
+    if (this.overlayPath) {
+      const overlay = document.createElement("img");
+      overlay.className = "mmm-meteosat-overlay";
+      overlay.src = `/modules/MMM-Meteosat/${this.overlayPath}?v=${encodeURIComponent(this.overlayVersion || this.imageVersion)}`;
+      overlay.alt = "";
+      overlay.setAttribute("aria-hidden", "true");
+      overlay.style.opacity = String(Math.min(1, Math.max(0, Number(this.config.overlayOpacity) || 0)));
+      overlay.onerror = () => overlay.remove();
+      stack.appendChild(overlay);
+    }
+
+    return stack;
+  },
+
   createImage() {
     const image = document.createElement("img");
     image.className = "mmm-meteosat-image";
     image.src = `/modules/MMM-Meteosat/${this.imagePath}?v=${encodeURIComponent(this.imageVersion)}`;
-    image.style.width = `${this.config.imageSize}px`;
     image.alt = this.productLabel ? `Current Meteosat ${this.productLabel} image` : "Current Meteosat image";
     image.onerror = () => this.showStatusMessage(this.messages.error);
     return image;
@@ -169,6 +198,17 @@ Module.register("MMM-Meteosat", {
       : this.acquisitionTime || this.downloadedAt;
   },
 
+  log(level, message) {
+    const levels = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3 };
+    const configured = String(this.config.logLevel || "INFO").toUpperCase();
+    const activeLevel = Object.hasOwn(levels, configured) ? configured : "INFO";
+    if (!Object.hasOwn(levels, level) || levels[level] > levels[activeLevel]) return;
+    const text = `[MMM-Meteosat][${this.identifier}][${level}] ${message}`;
+    if (level === "ERROR") console.error(text);
+    else if (level === "WARN") console.warn(text);
+    else console.log(text);
+  },
+
   formatTimestamp(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
@@ -182,7 +222,7 @@ Module.register("MMM-Meteosat", {
         }
       ).format(date);
     } catch (error) {
-      console.error(`Invalid timestamp configuration: ${error.message}`);
+      this.log("ERROR", `Invalid timestamp configuration: ${error.message}`);
       return new Intl.DateTimeFormat(undefined, DEFAULT_TIMESTAMP_OPTIONS).format(date);
     }
   },

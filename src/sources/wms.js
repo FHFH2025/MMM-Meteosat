@@ -2,7 +2,7 @@
 
 const crypto = require("crypto");
 const fs = require("fs");
-const sharp = require("sharp");
+const { inspectImage } = require("../sharpWorkerClient");
 const { performance } = require("perf_hooks");
 const { createTemporaryPath } = require("../cache");
 
@@ -212,13 +212,18 @@ async function downloadWmsImage({ profile, targetFile, tempFile, size, userAgent
     });
   }
 
+  const uniqueValidationFile = createTemporaryPath(tempFile);
   let metadata;
   try {
-    metadata = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS, sequentialRead: true }).metadata();
+    fs.writeFileSync(uniqueValidationFile, buffer, { mode: 0o644 });
+    metadata = await inspectImage(uniqueValidationFile, { signal });
   } catch (error) {
+    if (error.name === "AbortError") throw error;
     throw new WmsRequestError(`EUMETView returned an unreadable image: ${sanitiseLogText(error.message)}`, {
       retryable: true, details: { request: "GetMap", durationMs, bytes: buffer.length }
     });
+  } finally {
+    fs.rmSync(uniqueValidationFile, { force: true });
   }
   if (!["png", "jpeg"].includes(metadata.format)) {
     throw new WmsRequestError(`Unexpected WMS image format: ${metadata.format || "unknown"}.`, {

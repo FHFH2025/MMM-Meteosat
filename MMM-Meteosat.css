@@ -2,8 +2,15 @@
   text-align: center;
 }
 
+.mmm-meteosat-image-stack {
+  position: relative;
+  display: block;
+  max-width: 100%;
+}
+
 .mmm-meteosat-image {
   display: block;
+  width: 100%;
   max-width: 100%;
   height: auto;
   border: 0;
@@ -25,4 +32,15 @@
   line-height: 24px;
   color: #999;
   text-align: center;
+}
+
+.mmm-meteosat-overlay {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  pointer-events: none;
+  user-select: none;
 }

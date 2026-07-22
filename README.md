@@ -16,6 +16,7 @@ MMM-Meteosat displays near-real-time Meteosat Third Generation (MTG) full-disk s
 - Bounded retries for temporary network and server errors
 - Suspend/resume support with an immediate update check after resume
 - Freshness detection based on satellite acquisition time and unchanged image content
+- Optional official EUMETSAT coastline and country-border overlays
 - Defensive limits for downloads, decoded images and concurrent module instances
 
 ## Requirements
@@ -93,6 +94,9 @@ Adapt the container name and path to your installation.
     showSource: true,
     showProduct: true,
     showStatus: true,
+    showCoastlines: true,
+    showCountryBorders: false,
+    overlayOpacity: 0.6,
     logLevel: "INFO",
     staleAfter: 90 * 60 * 1000,
     retryDelays: [15 * 1000, 45 * 1000],
@@ -129,6 +133,9 @@ The table below is validated automatically against the public defaults in `MMM-M
 | `showSource` | boolean | `true` | Shows `EUMETSAT` in the caption. |
 | `showProduct` | boolean | `true` | Shows the resolved product label in the caption. |
 | `showStatus` | boolean | `true` | Shows loading, no-image and error messages when no image can be displayed. It does **not** hide the stale label in the caption. |
+| `showCoastlines` | boolean | `false` | Overlays official EUMETSAT/Natural Earth coastlines. The overlay is downloaded only when enabled. |
+| `showCountryBorders` | boolean | `false` | Overlays official EUMETSAT/Natural Earth land-boundary lines. It can be used alone or together with coastlines. |
+| `overlayOpacity` | number | `0.6` | Overlay opacity from `0` (invisible) to `1` (fully opaque). Values outside this range are constrained. |
 | `logLevel` | string | `"INFO"` | Log level: `ERROR`, `WARN`, `INFO` or `DEBUG`. Invalid values fall back to `INFO`. |
 | `staleAfter` | number | `5400000` | Freshness threshold in milliseconds. An image is marked delayed when its acquisition time or the time since the last actual content change exceeds this value. Set to `0` to disable stale detection. |
 | `retryDelays` | number[] | `[15000,45000]` | Delays before retrying temporary network, timeout, HTTP 429 or HTTP 5xx failures. At most five entries are used and each delay is capped at five minutes. Use `[]` to disable retries. |
@@ -147,6 +154,37 @@ messages: {
   stale: ""
 }
 ```
+
+## Coastline and country-border overlays
+
+MMM-Meteosat can place official EUMETSAT background layers directly above the satellite image. No overlay image is bundled with the module and no asset is copied from another MagicMirror module.
+
+```js
+config: {
+  showCoastlines: true,
+  showCountryBorders: false,
+  overlayOpacity: 0.6
+}
+```
+
+The available combinations are:
+
+| Coastlines | Country borders | EUMETSAT layer selection |
+|---|---|---|
+| `false` | `false` | no overlay |
+| `true` | `false` | `backgrounds:ne_10m_coastline` |
+| `false` | `true` | `backgrounds:ne_boundary_lines_land` |
+| `true` | `true` | both layers in one WMS image |
+
+The overlay is requested in the same geostationary projection, bounding box and pixel dimensions as the satellite source image. It is kept as a separate transparent PNG and stacked above the processed satellite image in the browser. Changing `overlayOpacity` therefore requires neither another download nor image reprocessing.
+
+Overlay files are shared by all module instances using the same `wmsImageSize` and are stored below:
+
+```text
+cache/overlays/<wmsImageSize>/
+```
+
+Only the configured variant is downloaded. The module honours the WMS `Cache-Control`/`Expires` lifetime; EUMETSAT currently returns a seven-day cache lifetime. After expiry the selected overlay is fetched again, validated as an RGBA PNG with the expected dimensions, hashed and atomically replaced. A failed overlay refresh never hides or blocks the satellite image, and an existing cached overlay remains usable.
 
 ## Products
 
@@ -238,6 +276,7 @@ Each module instance receives its own cache folder. MagicMirror identifiers such
 ```text
 cache/m3/geocolour/
 cache/m4/infrared/
+cache/overlays/1800/
 ```
 
 A stable custom identifier can be selected:
@@ -281,11 +320,12 @@ If a new source image has the same hash as the cached source, `latest.png` is re
 
 ## Image processing and safety limits
 
-The node helper downloads the original EUMETView image and creates a transparent PNG by applying a geometric full-disk mask. Processing is performed with `sharp`.
+The node helper downloads the original EUMETView image and creates a transparent PNG by applying a geometric full-disk mask. Native processing and image validation are performed with `sharp` in a separate Node.js child process, not in the MagicMirror Electron process.
 
 Runtime limits include:
 
 - WMS image download: 40 MiB maximum;
+- overlay download: 5 MiB maximum;
 - capabilities document: 5 MiB maximum;
 - decoded input image: 3600 × 3600 pixels maximum;
 - WMS request size: 600–3600 pixels;
@@ -327,7 +367,7 @@ Compare it with `geocolour`. Blank or partial areas are often expected for speci
 
 ### Sharp/Electron warning on Linux
 
-Electron may print a warning that its Linux binaries could be incompatible with `sharp`. A warning alone does not mean processing failed. Verify that `npm test` passes and that the module successfully creates or updates `cache/.../latest.png`. Install dependencies inside the same container/runtime that executes MagicMirror.
+Version 1.4.1 isolates `sharp` in a normal Node.js child process, so the Linux Electron/Sharp compatibility warning should no longer appear. If the worker cannot start, verify that `node` is available in the container `PATH` and that dependencies were installed inside the same container/runtime that executes MagicMirror. The worker executable can be overridden for unusual installations with the `MMM_METEOSAT_NODE_BINARY` environment variable.
 
 ### Clear one cached product
 
@@ -352,7 +392,7 @@ Restart MagicMirror² afterwards. For Docker installations, run `npm install` in
 
 ## Upgrade notes for 1.3.0
 
-Version 1.3.0 adds suspend/resume handling and richer freshness state. Existing 1.2.x cache directories remain usable. New fields such as `lastAttemptAt`, `lastSuccessfulDownloadAt` and `lastImageChangeAt` can initially be absent in an older `status.json`; they are populated as relevant update events occur.
+Version 1.4.1 moves native Sharp processing out of Electron. Version 1.4.0 added optional coastline and country-border overlays. Version 1.3.0 added suspend/resume handling and richer freshness state. Existing 1.2.x cache directories remain usable. New fields such as `lastAttemptAt`, `lastSuccessfulDownloadAt` and `lastImageChangeAt` can initially be absent in an older `status.json`; they are populated as relevant update events occur.
 
 No new satellite source or custom image-source abstraction was introduced. MMM-Meteosat remains intentionally focused on official Meteosat satellite imagery.
 
@@ -364,9 +404,12 @@ node_helper.js        Scheduling, downloads, cache state and lifecycle handling
 src/config.js         Normalisation and hard configuration limits
 src/products.js       Supported EUMETSAT product profiles
 src/sources/wms.js    EUMETView WMS capabilities and image requests
-src/imageProcessor.js Image validation and full-disk transparency processing
+src/imageProcessor.js Sharp-worker orchestration and atomic image replacement
+src/sharpWorker.js     Isolated native Sharp/libvips image operations
+src/sharpWorkerClient.js Abort-aware child-process management
 src/cache.js          Cache paths, validation and atomic state handling
 src/status.js         Freshness evaluation
+src/overlay.js        Official EUMETSAT overlay selection, download and cache handling
 src/retry.js          Abort-aware bounded retry handling
 src/logger.js         Structured module logging
 test/                 Automated tests and deterministic fixtures

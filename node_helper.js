@@ -10,8 +10,9 @@ const { processImage } = require("./src/imageProcessor");
 const { downloadWmsImage, fetchLatestImageTime } = require("./src/sources/wms");
 const { MeteosatLogger, LEVELS: LOG_LEVELS } = require("./src/logger");
 const { evaluateFreshness } = require("./src/status");
+const { selectOverlayVariant, normaliseOverlayOpacity, getOverlayPaths, readOverlayState, ensureOverlay } = require("./src/overlay");
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.1";
 const { MINIMUM_UPDATE_INTERVAL, normaliseUpdateInterval, normaliseImageSize, normaliseStaleAfter, normaliseRetryDelays } = require("./src/config");
 const { abortError, runWithRetries } = require("./src/retry");
 const MAX_CLIENTS = 10;
@@ -27,7 +28,6 @@ module.exports = NodeHelper.create({
     this.clients = new Map();
     this.moduleDirectory = __dirname;
     fs.mkdirSync(path.join(__dirname, "cache"), { recursive: true, mode: 0o755 });
-    console.log(`[MMM-Meteosat] Node helper ${VERSION} started.`);
   },
 
   socketNotificationReceived(notification, payload = {}) {
@@ -77,6 +77,9 @@ module.exports = NodeHelper.create({
       showSource: payload.showSource !== false,
       showProduct: payload.showProduct !== false,
       showStatus: payload.showStatus !== false,
+      showCoastlines: payload.showCoastlines === true,
+      showCountryBorders: payload.showCountryBorders === true,
+      overlayOpacity: normaliseOverlayOpacity(payload.overlayOpacity),
       selection
     };
   },
@@ -92,7 +95,8 @@ module.exports = NodeHelper.create({
       config, logger, generation, timer: null,
       suspended: false, resumePending: false,
       updateRunning: false, updateStartedAt: null,
-      operationController: null
+      operationController: null,
+      overlayController: null, overlayRunning: false
     };
     const paths = this.getPaths(client);
     ensureCache(paths);
@@ -100,6 +104,7 @@ module.exports = NodeHelper.create({
 
     if (previous?.timer) clearInterval(previous.timer);
     previous?.operationController?.abort();
+    previous?.overlayController?.abort();
     this.clients.set(instanceId, client);
 
     logger.info(`Product: ${config.selection.requested} -> ${config.selection.resolved}; cache: ${config.cacheId}; interval: ${config.updateInterval} ms.`);
@@ -113,7 +118,9 @@ module.exports = NodeHelper.create({
       retryDelaysMs: config.retryDelays, timestampType: config.timestampType,
       showTimestamp: config.showTimestamp, timestampLocale: config.timestampLocale,
       showSource: config.showSource, showProduct: config.showProduct,
-      showStatus: config.showStatus, logLevel: config.logLevel, userAgent: USER_AGENT
+      showStatus: config.showStatus, showCoastlines: config.showCoastlines,
+      showCountryBorders: config.showCountryBorders, overlayOpacity: config.overlayOpacity,
+      logLevel: config.logLevel, userAgent: USER_AGENT
     });
     logger.block("DEBUG", "Cache paths and initial state", {
       cacheDirectory: paths.directory, sourceFile: paths.sourceFile, imageFile: paths.imageFile,
@@ -155,7 +162,8 @@ module.exports = NodeHelper.create({
     if (client.timer) clearInterval(client.timer);
     client.timer = null;
     client.operationController?.abort();
-    client.logger.debug("Module suspended; update timer and active update stopped.");
+    client.overlayController?.abort();
+    client.logger.debug("Module suspended; active satellite and overlay updates stopped.");
   },
 
   resumeClient(instanceId) {
@@ -205,6 +213,8 @@ module.exports = NodeHelper.create({
     const paths = this.getPaths(client);
     ensureCache(paths);
     const debug = (title, entries) => entries && typeof entries === "object" ? logger.block("DEBUG", title, entries) : logger.debug(`${title}${entries ? `: ${entries}` : ""}`);
+
+    void this.refreshOverlayInBackground(instanceId, client, debug);
 
     try {
       const previousState = readState(paths, (message) => logger.warn(message));
@@ -257,7 +267,7 @@ module.exports = NodeHelper.create({
       }
 
       const processing = await processImage({
-        sourceFile: paths.sourceFile, targetFile: paths.imageFile, tempFile: paths.tempImageFile, debug,
+        sourceFile: paths.sourceFile, targetFile: paths.imageFile, tempFile: paths.tempImageFile, debug, signal: controller.signal,
         isActive: () => this.isCurrent(instanceId, client, controller)
       });
       this.assertCurrent(instanceId, client, controller);
@@ -295,6 +305,71 @@ module.exports = NodeHelper.create({
     }
   },
 
+  async refreshOverlayInBackground(instanceId, client, debug) {
+    const variant = selectOverlayVariant(client.config.showCoastlines, client.config.showCountryBorders);
+    if (!variant || client.overlayRunning || client.suspended || this.getClient(instanceId) !== client) return null;
+
+    const controller = new AbortController();
+    client.overlayController = controller;
+    client.overlayRunning = true;
+
+    try {
+      const result = await runWithRetries({
+        operationName: `Overlay ${variant.id}`,
+        operation: () => ensureOverlay({
+          baseDirectory: this.moduleDirectory,
+          variant,
+          size: client.config.wmsImageSize,
+          userAgent: USER_AGENT,
+          signal: controller.signal,
+          isActive: () => this.getClient(instanceId) === client && client.overlayController === controller && !controller.signal.aborted && !client.suspended,
+          debug
+        }),
+        retryDelays: client.config.retryDelays || [],
+        signal: controller.signal,
+        logger: client.logger
+      });
+
+      if (this.getClient(instanceId) !== client || client.overlayController !== controller || client.suspended) return null;
+
+      if (result?.changed) {
+        client.logger.info(`Overlay updated: ${variant.id}.`);
+        const paths = this.getPaths(client);
+        const state = readState(paths, (message) => client.logger.warn(message));
+        if (exists(paths.imageFile)) {
+          this.sendStatus("METEOSAT_IMAGE_UNCHANGED", instanceId, state, paths);
+        }
+      }
+
+      return result;
+    } catch (error) {
+      if (error.name === "AbortError") {
+        client.logger.debug("Overlay update aborted.");
+        return null;
+      }
+      client.logger.block("WARN", "Overlay update failed; satellite image remains available", {
+        variant: variant.id,
+        message: error.message,
+        status: error.status || null,
+        retryable: error.retryable === true
+      });
+      return null;
+    } finally {
+      if (client.overlayController === controller) client.overlayController = null;
+      client.overlayRunning = false;
+    }
+  },
+
+  getOverlayPayload(client) {
+    const variant = selectOverlayVariant(client.config.showCoastlines, client.config.showCountryBorders);
+    if (!variant) return { overlayPath: null, overlayVersion: null };
+    const paths = getOverlayPaths(this.moduleDirectory, client.config.wmsImageSize, variant);
+    if (!exists(paths.imageFile)) return { overlayPath: null, overlayVersion: null };
+    const state = readOverlayState(paths);
+    const version = state.contentHash || statSize(paths.imageFile) || Date.now();
+    return { overlayPath: paths.relativeImageFile, overlayVersion: version };
+  },
+
   async runWithRetries(client, controller, operationName, operation) {
     return runWithRetries({
       operationName,
@@ -319,6 +394,7 @@ module.exports = NodeHelper.create({
   sendStatus(notification, instanceId, state, paths) {
     const client = this.getClient(instanceId);
     const freshness = evaluateFreshness(state, client?.config.staleAfter || 0);
+    const overlay = client ? this.getOverlayPayload(client) : { overlayPath: null, overlayVersion: null };
     this.sendSocketNotification(notification, {
       instanceId,
       acquisitionTime: state.imageTime || null,
@@ -329,7 +405,9 @@ module.exports = NodeHelper.create({
       staleReason: freshness.reason,
       imagePath: paths.relativeImageFile,
       productLabel: state.productLabel || client?.config.selection.profile.label || null,
-      imageVersion: Date.now()
+      imageVersion: Date.now(),
+      overlayPath: overlay.overlayPath,
+      overlayVersion: overlay.overlayVersion
     });
   },
 
